@@ -57,6 +57,8 @@ C_SOURCES += Drivers/Library/StdDriver/src/uart.c
 C_SOURCES += Drivers/Library/StdDriver/src/retarget.c
 C_SOURCES += Drivers/Library/StdDriver/src/clk.c
 C_SOURCES += Drivers/Library/StdDriver/src/gpio.c
+C_SOURCES += Drivers/Library/StdDriver/src/i2c.c
+C_SOURCES += Drivers/Library/StdDriver/src/spi.c
 C_SOURCES += Drivers/Library/StdDriver/src/timer.c
 
 ASM_SOURCES += $(wildcard Device_Startup/*.S)

@@ -1,16 +1,8 @@
 /* Linker script to configure memory regions. */
-/*
- user app not use bootloader
- rom      (rx)  : ORIGIN = 0x00000000, LENGTH = 0x00080000 (512 kB)
- user app use bootloader
- rom      (rx)  : ORIGIN = 0x00010000, LENGTH = 0x00070000 (448 kB)
- bootloader
- rom      (rx)  : ORIGIN = 0x00000000, LENGTH = 0x00010000 (64 kB)
-*/
 MEMORY
 {
-  FLASH (rx) : ORIGIN = 0x00010000, LENGTH = 448K
-  RAM (rwx)  : ORIGIN = 0x20000000, LENGTH = 128K 
+  FLASH (rx) : ORIGIN = 0x00000000, LENGTH = 0x80000   /* 512k */
+  RAM (rwx)  : ORIGIN = 0x20000000, LENGTH = 0x28000   /* 160k */
 }
 
 /* Library configurations */

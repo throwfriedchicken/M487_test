@@ -1,22 +1,22 @@
-/*************************************************************************//**
+/**************************************************************************//**
  * @file     main.c
- * @version  V1.00
- * @brief    A project template for M480 MCU.
- *
- * @copyright (C) 2016 Nuvoton Technology Corp. All rights reserved.
-*****************************************************************************/
+ * @brief
+ *           Use ADC to get Voltage data and send it out by PWM
+ * @note
+ * Copyright (C) 2019 Nuvoton Technology Corp. All rights reserved.
+ *****************************************************************************/
 #include <stdio.h>
-#include "NuMicro.h"
-
+#include <stdlib.h>
+#include "M480.h"
+#include "i2c.h"
+#include "spi.h"
 #define PLL_CLOCK           192000000
-#define EPWM_Prescaler 48
-#define EPWM_Period 1999
+//#define use_I2C
+//#define i2c_port I2C2
+//#define use_I2C2
+
 void SYS_Init(void)
 {
-    /*---------------------------------------------------------------------------------------------------------*/
-    /* Init System Clock                                                                                       */
-    /*---------------------------------------------------------------------------------------------------------*/
-    /* Unlock protected registers */
     SYS_UnlockReg();
 
     /* Set XT1_OUT(PF.2) and XT1_IN(PF.3) to input mode */
@@ -31,15 +31,26 @@ void SYS_Init(void)
     /* Set core clock as PLL_CLOCK from PLL */
     CLK_SetCoreClock(PLL_CLOCK);
     /* Set PCLK0/PCLK1 to HCLK/2 */
-    CLK->PCLKDIV = (CLK_PCLKDIV_APB0DIV_DIV2 | CLK_PCLKDIV_APB1DIV_DIV2);
+    CLK->PCLKDIV = (CLK_PCLKDIV_APB0DIV_DIV1 | CLK_PCLKDIV_APB1DIV_DIV1);
 
     /* Enable UART clock */
     CLK_EnableModuleClock(UART0_MODULE);
-    CLK_EnableModuleClock(EPWM0_MODULE);
+    CLK_EnableModuleClock(SPI0_MODULE);
+    #ifdef use_I2C
+        #ifdef use_I2C0
+            CLK_EnableModuleClock(I2C0_MODULE);
+        #endif
+        #ifdef use_I2C1
+            CLK_EnableModuleClock(I2C1_MODULE);
+        #endif
+        #ifdef use_I2C2
+            CLK_EnableModuleClock(I2C2_MODULE);
+        #endif
+    #endif    
+    
     /* Select UART clock source from HXT */
     CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL1_UART0SEL_HXT, CLK_CLKDIV0_UART0(1));
-    CLK_SetModuleClock(EPWM0_MODULE,CLK_CLKSEL2_EPWM0SEL_PLL,(uint32_t)NULL);
-    SYS_ResetModule(EPWM0_RST);
+    CLK_SetModuleClock(SPI0_MODULE, CLK_CLKSEL2_SPI0SEL_PCLK1,MODULE_NoMsk);
     /* Update System Core Clock */
     /* User can use SystemCoreClockUpdate() to calculate SystemCoreClock. */
     SystemCoreClockUpdate();
@@ -49,47 +60,54 @@ void SYS_Init(void)
     /* Set GPB multi-function pins for UART0 RXD and TXD */
     SYS->GPB_MFPH &= ~(SYS_GPB_MFPH_PB12MFP_Msk | SYS_GPB_MFPH_PB13MFP_Msk);
     SYS->GPB_MFPH |= (SYS_GPB_MFPH_PB12MFP_UART0_RXD | SYS_GPB_MFPH_PB13MFP_UART0_TXD);
-    
+    #ifdef use_I2C
+        #ifdef use_I2C0
+            SYS->GPA_MFPL &= ~(SYS_GPA_MFPL_PA4MFP_Msk|SYS_GPA_MFPL_PA5MFP_Msk);
+	        SYS->GPA_MFPL |= (SYS_GPA_MFPL_PA4MFP_I2C0_SDA|SYS_GPA_MFPL_PA5MFP_I2C0_SCL);
+        #endif
+        #ifdef use_I2C1
+            SYS->GPG_MFPL &= ~(SYS_GPG_MFPL_PG2MFP_Msk|SYS_GPG_MFPL_PG3MFP_Msk);
+            SYS->GPG_MFPL |= (SYS_GPG_MFPL_PG2MFP_I2C1_SCL|SYS_GPG_MFPL_PG3MFP_I2C1_SDA);
+        #endif
+        #ifdef use_I2C2
+            SYS->GPA_MFPH &= (SYS_GPA_MFPH_PA10MFP_Msk|SYS_GPA_MFPH_PA11MFP_Msk);
+            SYS->GPA_MFPH |= (SYS_GPA_MFPH_PA10MFP_I2C2_SDA|SYS_GPA_MFPH_PA11MFP_I2C2_SCL);
+        #endif
+    #endif
 
-    SYS->GPA_MFPL &= ~(SYS_GPA_MFPL_PA5MFP_Msk);
-    SYS->GPA_MFPL |= (SYS_GPA_MFPL_PA5MFP_EPWM0_CH0);
+    SYS->GPF_MFPH &= ~(SYS_GPF_MFPH_PF9MFP_Msk|SYS_GPF_MFPH_PF8MFP_Msk);
+    SYS->GPF_MFPH |= (SYS_GPF_MFPH_PF9MFP_SPI0_SS|SYS_GPF_MFPH_PF8MFP_SPI0_CLK);
+
+    SYS->GPF_MFPL &= ~(SYS_GPF_MFPL_PF7MFP_Msk|SYS_GPF_MFPL_PF6MFP_Msk);
+    SYS->GPF_MFPL |= (SYS_GPF_MFPL_PF7MFP_SPI0_MISO|SYS_GPF_MFPL_PF6MFP_SPI0_MOSI);
+
 
     /* Lock protected registers */
-    SYS_LockReg();
+    SYS_LockReg();    
 }
 
-void PWM_init(){
-    EPWM_SET_PRESCALER(EPWM0,0,EPWM_Prescaler - 1);
-    EPWM_SET_CNR(EPWM0,0,EPWM_Period);
-    EPWM_SET_CMR(EPWM0,0,10);
-    EPWM_SET_ALIGNED_TYPE(EPWM0,BIT0,EPWM_UP_COUNTER);
-    EPWM_SET_OUTPUT_LEVEL(EPWM0,BIT0,EPWM_OUTPUT_LOW,EPWM_OUTPUT_HIGH,EPWM_OUTPUT_NOTHING,EPWM_OUTPUT_NOTHING);
-    EPWM_EnableOutput(EPWM0,BIT0);
-    EPWM_Start(EPWM0,BIT0);
-}
-/*
- * This is a template project for M480 series MCU. Users could based on this project to create their
- * own application without worry about the IAR/Keil project settings.
- *
- * This template application uses external crystal as HCLK source and configures UART0 to print out
- * "Hello World", users may need to do extra system configuration based on their system design.
- */
 
-int main()
+int main(void)
 {
-
     SYS_Init();
-    PWM_init();
-    /* Init UART to 115200-8n1 for print message */
-    UART_Open(UART0, 38400);
-    /* Connect UART to PC, and open a terminal tool to receive following message */
-    printf("Hello World! Hello Nuvoton!\n");
-    printf("Here is Nuvoton M487KMCAN.\n\n");
-    printf("Mother Fucker\n\n");
+	UART_Open(UART0,115200);
+	//I2C_Open(i2c_port,100000);
+    SPI_Open(SPI0,SPI_MASTER,SPI_MODE_0,8,24000000);
+    SPI_DisableAutoSS(SPI0);
+    uint8_t tmp,data=0;
+	while(1){
+		//I2C_WriteByte(i2c_port,0x24,0xAA);
+        SPI_SET_SS_LOW(SPI0);
+        SPI_WRITE_TX(SPI0,data);
+        while(SPI_IS_BUSY(SPI0));
+        tmp = SPI_READ_RX(SPI0);
+        SPI_SET_SS_HIGH(SPI0);
+        printf("%x\n",tmp);
+        for(int i=0;i<19200;i++){
 
-    /* Got no where to go, just loop forever */
-    while(1);
-
+        }
+        if(data==255)data=0;
+        data++;
+	}
+	
 }
-
-/*** (C) COPYRIGHT 2016 Nuvoton Technology Corp. ***/
